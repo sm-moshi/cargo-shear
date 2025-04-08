@@ -3,19 +3,20 @@ mod import_collector;
 mod tests;
 
 use std::{
-    collections::{HashMap, HashSet},
-    env, fs,
-    path::{Path, PathBuf},
+    collections::{ HashMap, HashSet },
+    env,
+    fs,
+    path::{ Path, PathBuf },
     process::ExitCode,
     str::FromStr,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{ Context, Result };
 use bpaf::Bpaf;
-use cargo_metadata::{CargoOpt, Metadata, MetadataCommand, Package, TargetKind};
+use cargo_metadata::{ CargoOpt, Metadata, MetadataCommand, Package, TargetKind };
 use cargo_util_schemas::core::PackageIdSpec;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use walkdir::{DirEntry, WalkDir};
+use rayon::iter::{ IntoParallelRefIterator, ParallelIterator };
+use walkdir::{ DirEntry, WalkDir };
 
 use crate::import_collector::collect_imports;
 
@@ -77,7 +78,7 @@ impl CargoShear {
                     println!("Fixed {} dependencies!", self.fixed_dependencies);
                 }
 
-                let has_deps = (self.unused_dependencies - self.fixed_dependencies) > 0;
+                let has_deps = self.unused_dependencies - self.fixed_dependencies > 0;
 
                 if has_deps {
                     println!(
@@ -119,8 +120,9 @@ impl CargoShear {
             }
 
             // Skip if specific packages are specified and this package is not in the list
-            if !self.options.package.is_empty()
-                && !self.options.package.iter().any(|name| name == &package.name)
+            if
+                !self.options.package.is_empty() &&
+                !self.options.package.iter().any(|name| name == &package.name)
             {
                 continue;
             }
@@ -135,7 +137,7 @@ impl CargoShear {
     fn shear_workspace(
         &mut self,
         workspace_metadata: &Metadata,
-        all_pkg_deps: &Deps,
+        all_pkg_deps: &Deps
     ) -> Result<()> {
         if workspace_metadata.workspace_packages().len() <= 1 {
             return Ok(());
@@ -143,13 +145,15 @@ impl CargoShear {
         let metadata_path = workspace_metadata.workspace_root.as_std_path();
         let cargo_toml_path = metadata_path.join("Cargo.toml");
         let metadata = cargo_toml::Manifest::from_path(&cargo_toml_path)?;
-        let Some(workspace) = &metadata.workspace else { return Ok(()) };
+        let Some(workspace) = &metadata.workspace else {
+            return Ok(());
+        };
 
-        let ignored_package_names =
-            Self::get_ignored_package_names(&workspace_metadata.workspace_metadata);
+        let ignored_package_names = Self::get_ignored_package_names(
+            &workspace_metadata.workspace_metadata
+        );
 
-        let workspace_deps = workspace
-            .dependencies
+        let workspace_deps = workspace.dependencies
             .iter()
             .map(|(key, dependency)| {
                 // renamed package, e.g. `ustr = { package = "ustr-fxhash", version = "1.0.0" }`
@@ -172,7 +176,7 @@ impl CargoShear {
             .strip_prefix(env::current_dir()?)
             .unwrap_or(&cargo_toml_path)
             .to_string_lossy();
-        println!("root -- {path}:",);
+        println!("root -- {path}:");
         for unused_dep in &unused_deps {
             println!("  {unused_dep}");
         }
@@ -185,13 +189,11 @@ impl CargoShear {
     /// Returns the remaining package dependency names.
     fn shear_package(&mut self, metadata: &Metadata, package: &Package) -> Result<Deps> {
         let workspace_root = metadata.workspace_root.as_std_path();
-        let dir = package
-            .manifest_path
+        let dir = package.manifest_path
             .parent()
             .ok_or_else(|| anyhow::anyhow!("failed to get parent path {}", &package.manifest_path))?
             .as_std_path();
-        let relative_path = package
-            .manifest_path
+        let relative_path = package.manifest_path
             .as_std_path()
             .strip_prefix(workspace_root)
             .unwrap_or(dir)
@@ -200,32 +202,35 @@ impl CargoShear {
         let mut ignored_package_names = Self::get_ignored_package_names(&package.metadata);
         ignored_package_names.extend(Self::get_ignored_package_names(&metadata.workspace_metadata));
 
-        let this_package = metadata
-            .resolve
+        let this_package = metadata.resolve
             .as_ref()
             .context("`cargo_metadata::MetadataCommand::no_deps` should not be called.")?
-            .nodes
-            .iter()
+            .nodes.iter()
             .find(|node| node.id == package.id)
             .context("package should exist")?;
 
-        let package_dependency_names_map = this_package
-            .deps // `deps` handles renamed dependencies whereas `dependencies` does not
+        let package_dependency_names_map = this_package.deps // `deps` handles renamed dependencies whereas `dependencies` does not
             .iter()
             .map(|node_dep| {
-                Self::parse_package_id(&node_dep.pkg.repr)
-                    .map(|package_name| (node_dep.name.clone(), package_name))
+                Self::parse_package_id(&node_dep.pkg.repr).map(|package_name| (
+                    node_dep.name.clone(),
+                    package_name,
+                ))
             })
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .filter(|(_, name)| !ignored_package_names.contains(name.as_str()))
             .collect::<HashMap<String, String>>();
 
-        let module_names_from_package_deps =
-            package_dependency_names_map.keys().cloned().collect::<HashSet<_>>();
+        let module_names_from_package_deps = package_dependency_names_map
+            .keys()
+            .cloned()
+            .collect::<HashSet<_>>();
 
-        let package_dependency_names =
-            package_dependency_names_map.values().cloned().collect::<HashSet<_>>();
+        let package_dependency_names = package_dependency_names_map
+            .values()
+            .cloned()
+            .collect::<HashSet<_>>();
 
         let module_names_from_rust_files = Self::get_package_dependencies_from_rust_files(package)?;
 
@@ -282,34 +287,47 @@ impl CargoShear {
             .and_then(|object| object.get("cargo-shear"))
             .and_then(|object| object.get("ignored"))
             .and_then(|ignored| ignored.as_array())
-            .map(|ignored| ignored.iter().filter_map(|item| item.as_str()).collect::<HashSet<_>>())
+            .map(|ignored|
+                ignored
+                    .iter()
+                    .filter_map(|item| item.as_str())
+                    .collect::<HashSet<_>>()
+            )
             .unwrap_or_default()
     }
 
     fn get_package_dependencies_from_rust_files(package: &Package) -> Result<Deps> {
-        Ok(Self::get_package_rust_files(package)
-            .par_iter()
-            .map(|path| Self::process_rust_source(path))
-            .collect::<Result<Vec<Deps>>>()?
-            .into_iter()
-            .fold(HashSet::new(), |a, b| a.union(&b).cloned().collect()))
+        Ok(
+            Self::get_package_rust_files(package)
+                .par_iter()
+                .map(|path| Self::process_rust_source(path))
+                .collect::<Result<Vec<Deps>>>()?
+                .into_iter()
+                .fold(HashSet::new(), |a, b| a.union(&b).cloned().collect())
+        )
     }
 
     fn get_package_rust_files(package: &Package) -> Vec<PathBuf> {
-        package
-            .targets
+        package.targets
             .iter()
             .flat_map(|target| {
                 if target.kind.iter().any(|s| *s == TargetKind::CustomBuild) {
                     vec![target.src_path.clone().into_std_path_buf()]
                 } else {
-                    let target_dir = target.src_path.parent().unwrap_or_else(|| {
-                        panic!("failed to get parentp path {}", &target.src_path)
-                    });
+                    let target_dir = target.src_path
+                        .parent()
+                        .unwrap_or_else(|| {
+                            panic!("failed to get parentp path {}", &target.src_path)
+                        });
                     WalkDir::new(target_dir)
                         .into_iter()
                         .filter_map(Result::ok)
-                        .filter(|e| e.path().extension().is_some_and(|ext| ext == "rs"))
+                        .filter(|e|
+                            e
+                                .path()
+                                .extension()
+                                .is_some_and(|ext| ext == "rs")
+                        )
                         .map(DirEntry::into_path)
                         .collect::<Vec<_>>()
                 }
@@ -326,7 +344,7 @@ impl CargoShear {
     fn try_fix_package(
         &mut self,
         cargo_toml_path: &Path,
-        unused_dep_names: &[String],
+        unused_dep_names: &[String]
     ) -> Result<()> {
         if !self.options.fix {
             return Ok(());
@@ -336,11 +354,12 @@ impl CargoShear {
         let mut manifest = toml_edit::DocumentMut::from_str(&manifest)?;
 
         // Try `[workspace.dependencies]`
-        if let Some(dependencies) = manifest
-            .get_mut("workspace")
-            .and_then(|item| item.as_table_mut())
-            .and_then(|table| table.get_mut("dependencies"))
-            .and_then(|item| item.as_table_mut())
+        if
+            let Some(dependencies) = manifest
+                .get_mut("workspace")
+                .and_then(|item| item.as_table_mut())
+                .and_then(|table| table.get_mut("dependencies"))
+                .and_then(|item| item.as_table_mut())
         {
             for k in unused_dep_names {
                 dependencies.remove(k);
@@ -349,8 +368,10 @@ impl CargoShear {
 
         // Try `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]`
         for table_name in ["dependencies", "dev-dependencies", "build-dependencies"] {
-            if let Some(dependencies) =
-                manifest.get_mut(table_name).and_then(|item| item.as_table_mut())
+            if
+                let Some(dependencies) = manifest
+                    .get_mut(table_name)
+                    .and_then(|item| item.as_table_mut())
             {
                 for k in unused_dep_names {
                     dependencies.remove(k);
